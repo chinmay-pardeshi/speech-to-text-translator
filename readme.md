@@ -1,6 +1,18 @@
+---
+
+````markdown
 # 🎙️ Speech-to-Text & Translation App
 
 This app allows you to **convert speech to text** and **translate it into multiple languages** using your **microphone** or an **uploaded audio file**. It’s built with Python, Streamlit, Google Speech Recognition API, and Google Translate.
+
+---
+
+## 🎥 Demo
+
+![App Demo](demo/demo.gif)
+<!-- For video: replace the above line with:
+[![Watch the demo](https://img.youtube.com/vi/YOUR_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+-->
 
 ---
 
@@ -34,18 +46,31 @@ This app allows you to **convert speech to text** and **translate it into multip
 ```bash
 git clone https://github.com/yourusername/speech-translate-app.git
 cd speech-translate-app
+````
 
 ### 2. Install dependencies
-bash
-    pip install -r requirements.txt
+
+```bash
+pip install -r requirements.txt
+```
 
 ### 3. Run the Streamlit app
-bash
-    streamlit run app.py
 
+```bash
+streamlit run app.py
+```
 
-🌐 Supported Languages
-Code	Language
-en	English
-hi	Hindi
-mr	Marathi
+---
+
+## 🌐 Supported Languages
+
+| Code | Language |
+| ---- | -------- |
+| en   | English  |
+| hi   | Hindi    |
+| mr   | Marathi  |
+
+```
+
+---
+
