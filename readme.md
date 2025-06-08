@@ -1,6 +1,3 @@
----
-
-````markdown
 # 🎙️ Speech-to-Text & Translation App
 
 This app allows you to **convert speech to text** and **translate it into multiple languages** using your **microphone** or an **uploaded audio file**. It’s built with Python, Streamlit, Google Speech Recognition API, and Google Translate.
