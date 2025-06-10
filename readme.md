@@ -6,10 +6,8 @@ This app allows you to **convert speech to text** and **translate it into multip
 
 ## 🎥 Demo
 
-![App Demo](demo/demo.gif)
-<!-- For video: replace the above line with:
-[![Watch the demo](https://img.youtube.com/vi/YOUR_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
--->
+![App Demo](https://github.com/chinmay-pardeshi/speech-to-text-translator/blob/main/Demo/speechtotext-gif.gif)
+
 
 ---
 
