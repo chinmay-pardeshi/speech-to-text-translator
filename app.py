@@ -194,6 +194,34 @@ def transcribe_audio(wav_path):
     except Exception as e:
         return f"An error occurred during transcription: {e}"
 
+def convert_audio_to_wav(temp_audio_path, ext):
+    """Convert audio file to WAV format with better error handling"""
+    try:
+        wav_path = temp_audio_path.replace(f".{ext}", ".wav")
+        
+        # Try different import methods for AudioSegment
+        if ext == "mp3":
+            audio = AudioSegment.from_mp3(temp_audio_path)
+        elif ext == "m4a":
+            audio = AudioSegment.from_file(temp_audio_path, format="m4a")
+        elif ext == "flac":
+            audio = AudioSegment.from_file(temp_audio_path, format="flac")
+        else:
+            # For other formats, try generic file reading
+            audio = AudioSegment.from_file(temp_audio_path)
+        
+        # Export as WAV
+        audio.export(wav_path, format="wav")
+        return wav_path, None
+        
+    except FileNotFoundError as e:
+        if "ffprobe" in str(e) or "ffmpeg" in str(e):
+            return None, "FFmpeg is not available. Please upload WAV files directly, or try a different audio format."
+        else:
+            return None, f"File not found: {e}"
+    except Exception as e:
+        return None, f"Audio conversion failed: {e}"
+
 def translate_text(text, lang_code):
     """Translate text to target language"""
     try:
@@ -356,18 +384,10 @@ else:
             # Convert to WAV if not already
             if ext != "wav":
                 st.markdown(f'<div class="info-box">🔄 Converting {ext.upper()} to WAV...</div>', unsafe_allow_html=True)
-                try:
-                    if ext == "mp3":
-                        audio = AudioSegment.from_mp3(temp_audio_path)
-                    elif ext == "m4a":
-                        audio = AudioSegment.from_file(temp_audio_path, format="m4a")
-                    elif ext == "flac":
-                        audio = AudioSegment.from_file(temp_audio_path, format="flac")
-                    
-                    wav_path = temp_audio_path.replace(f".{ext}", ".wav")
-                    audio.export(wav_path, format="wav")
-                except Exception as e:
-                    st.markdown(f'<div class="error-box">❌ Error converting audio file: {e}</div>', unsafe_allow_html=True)
+                wav_path, error = convert_audio_to_wav(temp_audio_path, ext)
+                if error:
+                    st.markdown(f'<div class="error-box">❌ {error}</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="info-box">💡 <strong>Solutions:</strong><br>• Try uploading a WAV file directly<br>• Convert your file to WAV using online tools<br>• Try a different audio format</div>', unsafe_allow_html=True)
                     st.stop()
             else:
                 wav_path = temp_audio_path
