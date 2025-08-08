@@ -1,5 +1,5 @@
 streamlit
 SpeechRecognition
-googletrans==3.1.0b2
+deep-translator
 pydub
 requests
