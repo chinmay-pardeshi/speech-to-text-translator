@@ -8,11 +8,7 @@ import io
 import time
 
 # Check if running in Streamlit Cloud environment
-try:
-    import pyaudio
-    MICROPHONE_AVAILABLE = True
-except ImportError:
-    MICROPHONE_AVAILABLE = False
+MICROPHONE_AVAILABLE = False  # Set to False for Streamlit Cloud deployment
 
 # Page configuration with custom styling
 st.set_page_config(
@@ -92,11 +88,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
     /* Button styling */
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -113,20 +104,6 @@ st.markdown("""
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     }
     
-    /* Selectbox styling */
-    .stSelectbox > div > div {
-        background: rgba(25, 25, 205, 0.9);
-        border-radius: 10px;
-    }
-    
-    /* Radio button styling */
-    .stRadio > div {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 15px;
-        padding: 1rem;
-    }
-    
     /* File uploader styling */
     .stFileUploader > div {
         background: rgba(255, 255, 255, 0.1);
@@ -140,44 +117,49 @@ st.markdown("""
 # Main title with gradient effect
 st.markdown('<h1 class="main-title">🎙️ Speech to Text & Translation App</h1>', unsafe_allow_html=True)
 
-# Show warning if microphone is not available
-if not MICROPHONE_AVAILABLE:
-    st.markdown("""
-    <div class="warning-box">
-        ⚠️ <strong>Microphone functionality is not available in this hosted environment.</strong><br>
-        Please use the file upload option to transcribe and translate your audio files.<br>
-        For microphone recording, you can run this app locally.
-    </div>
-    """, unsafe_allow_html=True)
+# Show info about hosted environment
+st.markdown("""
+<div class="warning-box">
+    ℹ️ <strong>Streamlit Cloud Version:</strong><br>
+    This is optimized for file upload transcription and translation.<br>
+    For the best experience with audio files, use WAV format when possible.
+</div>
+""", unsafe_allow_html=True)
 
 # Create main container
 with st.container():
-    st.markdown('<div class="info-box">Choose an input method: record via microphone (local only) or upload an audio file. Transcribe the audio and translate it to a selected language.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">Upload an audio file to transcribe and translate it to your selected language.</div>', unsafe_allow_html=True)
 
 # Language selector with colorful container
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     target_language = st.selectbox(
         "🌍 Select Output Language",
-        ["en", "hi", "mr"],
-        format_func=lambda x: {"en": "🇺🇸 English", "hi": "🇮🇳 Hindi", "mr": "🇮🇳 Marathi"}[x]
+        ["en", "hi", "mr", "es", "fr", "de", "ja", "ko", "zh"],
+        format_func=lambda x: {
+            "en": "🇺🇸 English", 
+            "hi": "🇮🇳 Hindi", 
+            "mr": "🇮🇳 Marathi",
+            "es": "🇪🇸 Spanish",
+            "fr": "🇫🇷 French", 
+            "de": "🇩🇪 German",
+            "ja": "🇯🇵 Japanese",
+            "ko": "🇰🇷 Korean",
+            "zh": "🇨🇳 Chinese"
+        }[x]
     )
 
-# Input method choice - conditionally show microphone option
-st.markdown("---")
-if MICROPHONE_AVAILABLE:
-    input_method = st.radio("🎯 Choose Input Method:", ["🎤 Microphone", "📁 Upload Audio File"])
-else:
-    input_method = st.radio("🎯 Choose Input Method:", ["📁 Upload Audio File"])
-    st.markdown('<div class="info-box">🎤 Microphone recording is only available when running locally.</div>', unsafe_allow_html=True)
+# Initialize speech recognizer
+@st.cache_resource
+def get_recognizer():
+    recognizer = sr.Recognizer()
+    recognizer.energy_threshold = 300
+    recognizer.dynamic_energy_threshold = True
+    recognizer.pause_threshold = 0.8
+    recognizer.phrase_threshold = 0.3
+    return recognizer
 
-recognizer = sr.Recognizer()
-
-# Adjust recognizer settings for better performance
-recognizer.energy_threshold = 300
-recognizer.dynamic_energy_threshold = True
-recognizer.pause_threshold = 0.8
-recognizer.phrase_threshold = 0.3
+recognizer = get_recognizer()
 
 def transcribe_audio(wav_path):
     """Transcribe audio file to text"""
@@ -188,318 +170,271 @@ def transcribe_audio(wav_path):
             audio_data = recognizer.record(source)
             return recognizer.recognize_google(audio_data)
     except sr.UnknownValueError:
-        return "Could not understand the audio. Please try speaking more clearly."
+        return "Could not understand the audio. Please try speaking more clearly or check audio quality."
     except sr.RequestError as e:
         return f"Request error from Google Speech Recognition service: {e}"
     except Exception as e:
-        return f"An error occurred during transcription: {e}"
+        return f"An error occurred during transcription: {str(e)}"
 
 def convert_audio_to_wav(temp_audio_path, ext):
     """Convert audio file to WAV format with better error handling"""
     try:
         wav_path = temp_audio_path.replace(f".{ext}", ".wav")
         
-        # Try different import methods for AudioSegment
-        if ext == "mp3":
+        # Load audio based on format
+        if ext.lower() == "mp3":
             audio = AudioSegment.from_mp3(temp_audio_path)
-        elif ext == "m4a":
+        elif ext.lower() == "m4a":
             audio = AudioSegment.from_file(temp_audio_path, format="m4a")
-        elif ext == "flac":
+        elif ext.lower() == "flac":
             audio = AudioSegment.from_file(temp_audio_path, format="flac")
+        elif ext.lower() == "ogg":
+            audio = AudioSegment.from_ogg(temp_audio_path)
         else:
-            # For other formats, try generic file reading
+            # Generic file reading for other formats
             audio = AudioSegment.from_file(temp_audio_path)
+        
+        # Convert to mono and normalize
+        audio = audio.set_channels(1)  # Convert to mono
+        audio = audio.set_frame_rate(16000)  # Standard sample rate for speech recognition
         
         # Export as WAV
         audio.export(wav_path, format="wav")
         return wav_path, None
         
-    except FileNotFoundError as e:
-        if "ffprobe" in str(e) or "ffmpeg" in str(e):
-            return None, "FFmpeg is not available. Please upload WAV files directly, or try a different audio format."
-        else:
-            return None, f"File not found: {e}"
     except Exception as e:
-        return None, f"Audio conversion failed: {e}"
+        error_msg = str(e)
+        if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+            return None, "Audio conversion failed. Please try uploading a WAV file directly."
+        else:
+            return None, f"Audio conversion failed: {error_msg}"
 
 def translate_text(text, lang_code):
     """Translate text to target language"""
     try:
-        if text.startswith("Could not") or text.startswith("Request error") or text.startswith("An error"):
+        # Skip translation if it's an error message
+        if any(phrase in text for phrase in ["Could not", "Request error", "An error", "Audio conversion failed"]):
             return text
         
-        # Map language codes to full names for deep-translator
-        lang_map = {"en": "english", "hi": "hindi", "mr": "marathi"}
+        # Map language codes for deep-translator
+        lang_map = {
+            "en": "english", 
+            "hi": "hindi", 
+            "mr": "marathi",
+            "es": "spanish",
+            "fr": "french", 
+            "de": "german",
+            "ja": "japanese",
+            "ko": "korean",
+            "zh": "chinese"
+        }
+        
         target_lang = lang_map.get(lang_code, "english")
         
+        # Skip translation if already in target language
+        if lang_code == "en":  # Assuming most input is in English
+            return text
+            
         translator = GoogleTranslator(source='auto', target=target_lang)
         result = translator.translate(text)
-        return result
-    except Exception as e:
-        return f"Translation error: {e}"
-
-def record_audio_with_microphone():
-    """Record audio from microphone - only works locally"""
-    if not MICROPHONE_AVAILABLE:
-        st.markdown('<div class="error-box">❌ Microphone functionality is not available in this environment.</div>', unsafe_allow_html=True)
-        return None
+        return result if result else text
         
-    try:
-        with sr.Microphone() as source:
-            st.markdown('<div class="info-box">🎤 Adjusting for ambient noise... Please wait.</div>', unsafe_allow_html=True)
-            recognizer.adjust_for_ambient_noise(source, duration=1)
-            st.markdown('<div class="info-box">🎤 Listening... Speak now! (You have 15 seconds)</div>', unsafe_allow_html=True)
-            
-            # Use longer timeout and phrase time limit
-            audio = recognizer.listen(source, timeout=3, phrase_time_limit=15)
-            return audio
-    except sr.WaitTimeoutError:
-        st.markdown('<div class="error-box">⏰ Listening timed out. No speech detected. Please try again.</div>', unsafe_allow_html=True)
-        return None
     except Exception as e:
-        st.markdown(f'<div class="error-box">❌ Microphone error: {e}</div>', unsafe_allow_html=True)
-        st.markdown('<div class="info-box">💡 Try these solutions:<br>• Check if your microphone is connected and working<br>• Grant microphone permissions to your browser<br>• Try refreshing the page</div>', unsafe_allow_html=True)
-        return None
+        return f"Translation error: {str(e)}"
 
-# Microphone input - only show if available
-if input_method == "🎤 Microphone" and MICROPHONE_AVAILABLE:
-    st.markdown("---")
-    st.markdown("### 🎤 Microphone Recording")
-    
-    # Instructions in a colorful box
-    st.markdown("""
-    <div class="info-box">
-        <h4>📋 Instructions for Microphone Recording:</h4>
-        <ul>
-            <li>🔌 Make sure your microphone is connected and working</li>
-            <li>🔐 Grant microphone permissions when prompted by your browser</li>
-            <li>🗣️ Speak clearly and avoid background noise</li>
-            <li>⏱️ You'll have 15 seconds to speak after clicking the button</li>
-        </ul>
+# File upload section
+st.markdown("---")
+st.markdown("### 📁 Audio File Upload & Processing")
+
+# Instructions
+st.markdown("""
+<div class="info-box">
+    <h4>📋 How to use this app:</h4>
+    <ul>
+        <li>📄 <strong>Supported formats:</strong> WAV, MP3, M4A, FLAC, OGG</li>
+        <li>🎯 <strong>Best results:</strong> Clear audio, minimal background noise</li>
+        <li>📊 <strong>File size:</strong> Keep under 200MB for optimal performance</li>
+        <li>🎤 <strong>Audio quality:</strong> 16kHz sample rate recommended</li>
+        <li>🌐 <strong>Languages:</strong> Supports multiple input and output languages</li>
+    </ul>
+</div>
+""", unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader(
+    "📤 Choose an audio file to transcribe and translate", 
+    type=["wav", "mp3", "m4a", "flac", "ogg"],
+    help="Select a clear audio file with speech to transcribe"
+)
+
+if uploaded_file:
+    # Display file information
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    st.markdown(f"""
+    <div class="success-box">
+        📄 <strong>File:</strong> {uploaded_file.name}<br>
+        📊 <strong>Size:</strong> {file_size_mb:.2f} MB<br>
+        🎵 <strong>Type:</strong> {uploaded_file.type}
     </div>
     """, unsafe_allow_html=True)
     
+    # Audio player
+    st.audio(uploaded_file, format=f"audio/{uploaded_file.name.split('.')[-1]}")
+
+    # Process button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🎤 Start Recording", type="primary"):
-            with st.spinner("🔧 Setting up microphone..."):
-                audio = record_audio_with_microphone()
-            
-            if audio is not None:
-                with st.spinner("🔄 Processing audio..."):
-                    try:
-                        # Transcribe directly from audio object
-                        text = recognizer.recognize_google(audio)
-                        
-                        if text:
-                            st.markdown('<div class="success-box">✅ Recording processed successfully!</div>', unsafe_allow_html=True)
-                            
-                            # Display transcribed text
-                            st.markdown("### 📝 Transcribed Text:")
-                            st.markdown(f"""
-                            <div class="custom-container">
-                                <h4 style="color: #2c3e50;">🎯 Original Text:</h4>
-                                <p style="font-size: 1.2em; color: #34495e; font-weight: 500;">{text}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+        if st.button("🎯 Transcribe and Translate", type="primary", use_container_width=True):
+            try:
+                # Get file extension
+                ext = uploaded_file.name.split(".")[-1].lower()
+                
+                # Create temporary file
+                with NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_audio:
+                    temp_audio.write(uploaded_file.read())
+                    temp_audio_path = temp_audio.name
 
-                            # Translate the text
-                            with st.spinner("🌐 Translating..."):
-                                translated = translate_text(text, target_language)
-                            
-                            # Display translated text
-                            st.markdown("### 🌐 Translated Text:")
-                            lang_names = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
-                            st.markdown(f"""
-                            <div class="custom-container">
-                                <h4 style="color: #2c3e50;">🌍 {lang_names[target_language]} Translation:</h4>
-                                <p style="font-size: 1.2em; color: #34495e; font-weight: 500;">{translated}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Option to save the transcription
-                            col1, col2, col3 = st.columns([1, 2, 1])
-                            with col2:
-                                if st.button("💾 Save Transcription"):
-                                    transcript_data = f"Original: {text}\nTranslated ({target_language}): {translated}"
-                                    st.download_button(
-                                        label="📄 Download Transcript",
-                                        data=transcript_data,
-                                        file_name=f"transcript_{int(time.time())}.txt",
-                                        mime="text/plain"
-                                    )
-                        
-                    except sr.UnknownValueError:
-                        st.markdown('<div class="error-box">❌ Could not understand the audio. Please try again with clearer speech.</div>', unsafe_allow_html=True)
-                    except sr.RequestError as e:
-                        st.markdown(f'<div class="error-box">❌ Speech recognition service error: {e}</div>', unsafe_allow_html=True)
-                    except Exception as e:
-                        st.markdown(f'<div class="error-box">❌ An unexpected error occurred: {e}</div>', unsafe_allow_html=True)
+                # Convert to WAV if necessary
+                if ext != "wav":
+                    with st.spinner(f"🔄 Converting {ext.upper()} to WAV..."):
+                        wav_path, error = convert_audio_to_wav(temp_audio_path, ext)
+                        if error:
+                            st.markdown(f'<div class="error-box">❌ {error}</div>', unsafe_allow_html=True)
+                            # Clean up
+                            try:
+                                os.unlink(temp_audio_path)
+                            except:
+                                pass
+                            st.stop()
+                else:
+                    wav_path = temp_audio_path
 
-# File upload input
-else:
-    st.markdown("---")
-    st.markdown("### 📁 File Upload")
+                # Transcribe audio
+                with st.spinner("🔍 Transcribing audio... This may take a moment."):
+                    text = transcribe_audio(wav_path)
+                
+                # Display results
+                st.markdown("---")
+                st.markdown("## 📝 Results")
+                
+                # Original transcription
+                st.markdown("### 🎯 Transcribed Text:")
+                st.markdown(f"""
+                <div class="custom-container">
+                    <h4 style="color: #2c3e50;">📝 Original Transcription:</h4>
+                    <p style="font-size: 1.2em; color: #34495e; font-weight: 500; background: rgba(255,255,255,0.8); padding: 1rem; border-radius: 10px; color: #2c3e50;">{text}</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Translation (if not an error)
+                if not any(phrase in text for phrase in ["Could not", "Request error", "An error", "Audio conversion failed"]):
+                    with st.spinner("🌐 Translating text..."):
+                        translated = translate_text(text, target_language)
+                    
+                    st.markdown("### 🌐 Translated Text:")
+                    lang_names = {
+                        "en": "English", "hi": "Hindi", "mr": "Marathi",
+                        "es": "Spanish", "fr": "French", "de": "German",
+                        "ja": "Japanese", "ko": "Korean", "zh": "Chinese"
+                    }
+                    
+                    st.markdown(f"""
+                    <div class="custom-container">
+                        <h4 style="color: #2c3e50;">🌍 {lang_names.get(target_language, 'Translation')}:</h4>
+                        <p style="font-size: 1.2em; color: #34495e; font-weight: 500; background: rgba(255,255,255,0.8); padding: 1rem; border-radius: 10px; color: #2c3e50;">{translated}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Download option
+                    st.markdown("### 💾 Save Results")
+                    transcript_data = f"""Audio File: {uploaded_file.name}
+File Size: {file_size_mb:.2f} MB
+Processing Date: {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+ORIGINAL TRANSCRIPTION:
+{text}
+
+TRANSLATION ({lang_names.get(target_language, target_language.upper())}):
+{translated}
+"""
+                    
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.download_button(
+                            label="📄 Download Complete Transcript",
+                            data=transcript_data,
+                            file_name=f"transcript_{uploaded_file.name.split('.')[0]}_{int(time.time())}.txt",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+
+                # Clean up temporary files
+                try:
+                    os.unlink(temp_audio_path)
+                    if wav_path != temp_audio_path and os.path.exists(wav_path):
+                        os.unlink(wav_path)
+                except:
+                    pass
+                    
+            except Exception as e:
+                st.markdown(f'<div class="error-box">❌ Unexpected error: {str(e)}</div>', unsafe_allow_html=True)
+                # Clean up on error
+                try:
+                    if 'temp_audio_path' in locals():
+                        os.unlink(temp_audio_path)
+                    if 'wav_path' in locals() and wav_path != temp_audio_path:
+                        os.unlink(wav_path)
+                except:
+                    pass
+
+# Sidebar information
+with st.sidebar:
+    st.markdown("### 🔧 App Information")
     
-    # Instructions in a colorful box
     st.markdown("""
-    <div class="info-box">
-        <h4>📋 Instructions for File Upload:</h4>
-        <ul>
-            <li>📄 Supported formats: WAV, MP3, M4A, FLAC</li>
-            <li>🎯 For best results, use clear audio with minimal background noise</li>
-            <li>📊 Keep files under 200MB for optimal performance</li>
-            <li>🎤 This method works both locally and in hosted environments</li>
+    <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
+        <h4 style="color: #2c3e50;">🎯 Features:</h4>
+        <ul style="color: #34495e; margin: 0;">
+            <li>✅ Audio transcription</li>
+            <li>🌐 Multi-language translation</li>
+            <li>📄 Multiple audio formats</li>
+            <li>💾 Downloadable results</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
-    
-    uploaded_file = st.file_uploader(
-        "📤 Upload audio file (WAV, MP3, M4A, FLAC)", 
-        type=["wav", "mp3", "m4a", "flac"],
-        help="Select an audio file from your device"
-    )
-    
-    if uploaded_file:
-        # Display file info in colorful box
-        st.markdown(f"""
-        <div class="success-box">
-            📄 File: {uploaded_file.name}<br>
-            📊 Size: {uploaded_file.size / 1024 / 1024:.2f} MB
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Play audio file
-        st.audio(uploaded_file, format="audio/wav")
-
-        # Process the uploaded file
-        try:
-            ext = uploaded_file.name.split(".")[-1].lower()
-            
-            # Create temporary file
-            with NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_audio:
-                temp_audio.write(uploaded_file.read())
-                temp_audio_path = temp_audio.name
-
-            # Convert to WAV if not already
-            if ext != "wav":
-                st.markdown(f'<div class="info-box">🔄 Converting {ext.upper()} to WAV...</div>', unsafe_allow_html=True)
-                wav_path, error = convert_audio_to_wav(temp_audio_path, ext)
-                if error:
-                    st.markdown(f'<div class="error-box">❌ {error}</div>', unsafe_allow_html=True)
-                    st.markdown('<div class="info-box">💡 <strong>Solutions:</strong><br>• Try uploading a WAV file directly<br>• Convert your file to WAV using online tools<br>• Try a different audio format</div>', unsafe_allow_html=True)
-                    st.stop()
-            else:
-                wav_path = temp_audio_path
-
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("🎯 Transcribe and Translate", type="primary"):
-                    with st.spinner("🔍 Transcribing audio..."):
-                        text = transcribe_audio(wav_path)
-                    
-                    # Display transcribed text
-                    st.markdown("### 📝 Transcribed Text:")
-                    st.markdown(f"""
-                    <div class="custom-container">
-                        <h4 style="color: #2c3e50;">🎯 Original Text:</h4>
-                        <p style="font-size: 1.2em; color: #34495e; font-weight: 500;">{text}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    if not text.startswith("Could not") and not text.startswith("Request error") and not text.startswith("An error"):
-                        with st.spinner("🌐 Translating text..."):
-                            translated = translate_text(text, target_language)
-                        
-                        # Display translated text
-                        st.markdown("### 🌐 Translated Text:")
-                        lang_names = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
-                        st.markdown(f"""
-                        <div class="custom-container">
-                            <h4 style="color: #2c3e50;">🌍 {lang_names[target_language]} Translation:</h4>
-                            <p style="font-size: 1.2em; color: #34495e; font-weight: 500;">{translated}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Option to save the transcription
-                        col1, col2, col3 = st.columns([1, 2, 1])
-                        with col2:
-                            if st.button("💾 Save Transcription"):
-                                transcript_data = f"File: {uploaded_file.name}\nOriginal: {text}\nTranslated ({target_language}): {translated}"
-                                st.download_button(
-                                    label="📄 Download Transcript",
-                                    data=transcript_data,
-                                    file_name=f"transcript_{uploaded_file.name}_{int(time.time())}.txt",
-                                    mime="text/plain"
-                                )
-
-            # Clean up temporary files
-            try:
-                os.unlink(temp_audio_path)
-                if ext != "wav" and os.path.exists(wav_path):
-                    os.unlink(wav_path)
-            except:
-                pass
-                
-        except Exception as e:
-            st.markdown(f'<div class="error-box">❌ Error processing file: {e}</div>', unsafe_allow_html=True)
-
-# Sidebar with troubleshooting tips
-with st.sidebar:
-    st.markdown("### 🔧 Troubleshooting Guide")
-    
-    if not MICROPHONE_AVAILABLE:
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-            <h4 style="color: #2c3e50;">🎤 Microphone Status:</h4>
-            <p style="color: #34495e;">❌ Not available in hosted environment</p>
-            <p style="color: #34495e;">💡 Use file upload instead or run locally</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-            <h4 style="color: #2c3e50;">🎤 Microphone Issues:</h4>
-            <ul style="color: #34495e;">
-                <li>✅ Check browser permissions</li>
-                <li>🧪 Test microphone in other apps</li>
-                <li>🌐 Use Chrome/Firefox for best results</li>
-                <li>🔇 Avoid background noise</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
     
     st.markdown("""
     <div style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-        <h4 style="color: #2c3e50;">📁 File Upload Issues:</h4>
-        <ul style="color: #34495e;">
-            <li>📄 Use WAV, MP3, M4A, FLAC formats</li>
-            <li>📊 Keep files under 200MB</li>
-            <li>🎵 Ensure clear audio quality</li>
-            <li>🔊 Check audio file integrity</li>
+        <h4 style="color: #2c3e50;">💡 Tips for Better Results:</h4>
+        <ul style="color: #34495e; margin: 0;">
+            <li>🎤 Use clear, high-quality audio</li>
+            <li>🔇 Minimize background noise</li>
+            <li>🗣️ Speak clearly and at normal pace</li>
+            <li>📱 WAV format works best</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("""
-    <div style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-        <h4 style="color: #2c3e50;">🎯 Recognition Issues:</h4>
-        <ul style="color: #34495e;">
-            <li>🗣️ Speak clearly and slowly</li>
-            <li>📢 Use standard pronunciation</li>
-            <li>⏱️ Avoid very short phrases</li>
-            <li>🌐 Check internet connection</li>
-        </ul>
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 10px;">
+        <h4>⚡ Powered By:</h4>
+        <p style="margin: 0;">🎙️ Google Speech Recognition<br>🌐 Google Translate API<br>🎵 PyDub Audio Processing</p>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("---")
-    st.markdown("### ℹ️ About This App")
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 10px;">
-        <p>🎯 <strong>File Upload:</strong> Works everywhere</p>
-        <p>🎤 <strong>Microphone:</strong> Local environment only</p>
-        <p>🌐 <strong>Translation:</strong> English, Hindi, Marathi</p>
-        <p>⚡ <strong>Powered by:</strong> Google Speech API</p>
-    </div>
-    """, unsafe_allow_html=True)
+    
+    # Usage statistics (mock)
+    st.markdown("### 📊 Session Info")
+    if 'transcription_count' not in st.session_state:
+        st.session_state.transcription_count = 0
+    
+    st.metric("Files Processed", st.session_state.transcription_count)
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: rgba(255,255,255,0.7);'>"
+    "🎙️ Speech to Text & Translation App | Built with Streamlit"
+    "</div>", 
+    unsafe_allow_html=True
+)
