@@ -7,6 +7,13 @@ import os
 import io
 import time
 
+# Check if running in Streamlit Cloud environment
+try:
+    import pyaudio
+    MICROPHONE_AVAILABLE = True
+except ImportError:
+    MICROPHONE_AVAILABLE = False
+
 # Page configuration with custom styling
 st.set_page_config(
     page_title="Speech to Text & Translation",
@@ -133,9 +140,19 @@ st.markdown("""
 # Main title with gradient effect
 st.markdown('<h1 class="main-title">🎙️ Speech to Text & Translation App</h1>', unsafe_allow_html=True)
 
+# Show warning if microphone is not available
+if not MICROPHONE_AVAILABLE:
+    st.markdown("""
+    <div class="warning-box">
+        ⚠️ <strong>Microphone functionality is not available in this hosted environment.</strong><br>
+        Please use the file upload option to transcribe and translate your audio files.<br>
+        For microphone recording, you can run this app locally.
+    </div>
+    """, unsafe_allow_html=True)
+
 # Create main container
 with st.container():
-    st.markdown('<div class="info-box">Choose an input method: record via microphone or upload an audio file. Transcribe the audio and translate it to a selected language.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">Choose an input method: record via microphone (local only) or upload an audio file. Transcribe the audio and translate it to a selected language.</div>', unsafe_allow_html=True)
 
 # Language selector with colorful container
 col1, col2, col3 = st.columns([1, 2, 1])
@@ -146,9 +163,13 @@ with col2:
         format_func=lambda x: {"en": "🇺🇸 English", "hi": "🇮🇳 Hindi", "mr": "🇮🇳 Marathi"}[x]
     )
 
-# Input method choice
+# Input method choice - conditionally show microphone option
 st.markdown("---")
-input_method = st.radio("🎯 Choose Input Method:", ["🎤 Microphone", "📁 Upload Audio File"])
+if MICROPHONE_AVAILABLE:
+    input_method = st.radio("🎯 Choose Input Method:", ["🎤 Microphone", "📁 Upload Audio File"])
+else:
+    input_method = st.radio("🎯 Choose Input Method:", ["📁 Upload Audio File"])
+    st.markdown('<div class="info-box">🎤 Microphone recording is only available when running locally.</div>', unsafe_allow_html=True)
 
 recognizer = sr.Recognizer()
 
@@ -185,7 +206,11 @@ def translate_text(text, lang_code):
         return f"Translation error: {e}"
 
 def record_audio_with_microphone():
-    """Record audio from microphone"""
+    """Record audio from microphone - only works locally"""
+    if not MICROPHONE_AVAILABLE:
+        st.markdown('<div class="error-box">❌ Microphone functionality is not available in this environment.</div>', unsafe_allow_html=True)
+        return None
+        
     try:
         with sr.Microphone() as source:
             st.markdown('<div class="info-box">🎤 Adjusting for ambient noise... Please wait.</div>', unsafe_allow_html=True)
@@ -203,8 +228,8 @@ def record_audio_with_microphone():
         st.markdown('<div class="info-box">💡 Try these solutions:<br>• Check if your microphone is connected and working<br>• Grant microphone permissions to your browser<br>• Try refreshing the page</div>', unsafe_allow_html=True)
         return None
 
-# Microphone input
-if input_method == "🎤 Microphone":
+# Microphone input - only show if available
+if input_method == "🎤 Microphone" and MICROPHONE_AVAILABLE:
     st.markdown("---")
     st.markdown("### 🎤 Microphone Recording")
     
@@ -288,16 +313,17 @@ else:
     <div class="info-box">
         <h4>📋 Instructions for File Upload:</h4>
         <ul>
-            <li>📄 Supported formats: WAV, MP3</li>
+            <li>📄 Supported formats: WAV, MP3, M4A, FLAC</li>
             <li>🎯 For best results, use clear audio with minimal background noise</li>
             <li>📊 Keep files under 200MB for optimal performance</li>
+            <li>🎤 This method works both locally and in hosted environments</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader(
-        "📤 Upload audio file (WAV or MP3)", 
-        type=["wav", "mp3"],
+        "📤 Upload audio file (WAV, MP3, M4A, FLAC)", 
+        type=["wav", "mp3", "m4a", "flac"],
         help="Select an audio file from your device"
     )
     
@@ -306,7 +332,7 @@ else:
         st.markdown(f"""
         <div class="success-box">
             📄 File: {uploaded_file.name}<br>
-            📊 Size: {uploaded_file.size} bytes
+            📊 Size: {uploaded_file.size / 1024 / 1024:.2f} MB
         </div>
         """, unsafe_allow_html=True)
         
@@ -322,12 +348,22 @@ else:
                 temp_audio.write(uploaded_file.read())
                 temp_audio_path = temp_audio.name
 
-            # Convert to WAV if MP3
-            if ext == "mp3":
-                st.markdown('<div class="info-box">🔄 Converting MP3 to WAV...</div>', unsafe_allow_html=True)
-                audio = AudioSegment.from_mp3(temp_audio_path)
-                wav_path = temp_audio_path.replace(".mp3", ".wav")
-                audio.export(wav_path, format="wav")
+            # Convert to WAV if not already
+            if ext != "wav":
+                st.markdown(f'<div class="info-box">🔄 Converting {ext.upper()} to WAV...</div>', unsafe_allow_html=True)
+                try:
+                    if ext == "mp3":
+                        audio = AudioSegment.from_mp3(temp_audio_path)
+                    elif ext == "m4a":
+                        audio = AudioSegment.from_file(temp_audio_path, format="m4a")
+                    elif ext == "flac":
+                        audio = AudioSegment.from_file(temp_audio_path, format="flac")
+                    
+                    wav_path = temp_audio_path.replace(f".{ext}", ".wav")
+                    audio.export(wav_path, format="wav")
+                except Exception as e:
+                    st.markdown(f'<div class="error-box">❌ Error converting audio file: {e}</div>', unsafe_allow_html=True)
+                    st.stop()
             else:
                 wav_path = temp_audio_path
 
@@ -375,7 +411,7 @@ else:
             # Clean up temporary files
             try:
                 os.unlink(temp_audio_path)
-                if ext == "mp3" and os.path.exists(wav_path):
+                if ext != "wav" and os.path.exists(wav_path):
                     os.unlink(wav_path)
             except:
                 pass
@@ -387,23 +423,32 @@ else:
 with st.sidebar:
     st.markdown("### 🔧 Troubleshooting Guide")
     
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
-        <h4 style="color: #2c3e50;">🎤 Microphone Issues:</h4>
-        <ul style="color: #34495e;">
-            <li>✅ Check browser permissions</li>
-            <li>🧪 Test microphone in other apps</li>
-            <li>🌐 Use Chrome/Firefox for best results</li>
-            <li>🔇 Avoid background noise</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+    if not MICROPHONE_AVAILABLE:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
+            <h4 style="color: #2c3e50;">🎤 Microphone Status:</h4>
+            <p style="color: #34495e;">❌ Not available in hosted environment</p>
+            <p style="color: #34495e;">💡 Use file upload instead or run locally</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
+            <h4 style="color: #2c3e50;">🎤 Microphone Issues:</h4>
+            <ul style="color: #34495e;">
+                <li>✅ Check browser permissions</li>
+                <li>🧪 Test microphone in other apps</li>
+                <li>🌐 Use Chrome/Firefox for best results</li>
+                <li>🔇 Avoid background noise</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.markdown("""
     <div style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); padding: 1rem; border-radius: 10px; margin: 1rem 0;">
         <h4 style="color: #2c3e50;">📁 File Upload Issues:</h4>
         <ul style="color: #34495e;">
-            <li>📄 Use WAV/MP3 formats only</li>
+            <li>📄 Use WAV, MP3, M4A, FLAC formats</li>
             <li>📊 Keep files under 200MB</li>
             <li>🎵 Ensure clear audio quality</li>
             <li>🔊 Check audio file integrity</li>
@@ -420,5 +465,16 @@ with st.sidebar:
             <li>⏱️ Avoid very short phrases</li>
             <li>🌐 Check internet connection</li>
         </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.markdown("### ℹ️ About This App")
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 10px;">
+        <p>🎯 <strong>File Upload:</strong> Works everywhere</p>
+        <p>🎤 <strong>Microphone:</strong> Local environment only</p>
+        <p>🌐 <strong>Translation:</strong> English, Hindi, Marathi</p>
+        <p>⚡ <strong>Powered by:</strong> Google Speech API</p>
     </div>
     """, unsafe_allow_html=True)
