@@ -1,6 +1,6 @@
 import streamlit as st
 import speech_recognition as sr
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 from pydub import AudioSegment
 from tempfile import NamedTemporaryFile
 import os
@@ -199,9 +199,14 @@ def translate_text(text, lang_code):
     try:
         if text.startswith("Could not") or text.startswith("Request error") or text.startswith("An error"):
             return text
-        translator = Translator()
-        result = translator.translate(text, dest=lang_code)
-        return result.text
+        
+        # Map language codes to full names for deep-translator
+        lang_map = {"en": "english", "hi": "hindi", "mr": "marathi"}
+        target_lang = lang_map.get(lang_code, "english")
+        
+        translator = GoogleTranslator(source='auto', target=target_lang)
+        result = translator.translate(text)
+        return result
     except Exception as e:
         return f"Translation error: {e}"
 
